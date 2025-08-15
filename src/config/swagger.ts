@@ -55,6 +55,49 @@ const definition: OpenAPIV3.Document = {
         required: ["refreshToken"],
         properties: { refreshToken: { type: "string" } },
       },
+      Conversation: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          participants: { type: "array", items: { type: "string" } },
+          lastMessage: { $ref: "#/components/schemas/Message" },
+          updatedAt: { type: "string", format: "date-time" },
+          createdAt: { type: "string", format: "date-time" },
+          unreadCount: { type: "integer" },
+        },
+      },
+      Message: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          conversation: { type: "string" },
+          sender: { type: "string" },
+          content: { type: "string" },
+          status: { type: "string", enum: ["sent", "delivered", "read"] },
+          readBy: { type: "array", items: { type: "string" } },
+          createdAt: { type: "string", format: "date-time" },
+        },
+      },
+      CreateConversationRequest: {
+        type: "object",
+        required: ["participants"],
+        properties: {
+          participants: { type: "array", items: { type: "string" } },
+        },
+      },
+      PostMessageRequest: {
+        type: "object",
+        required: ["conversationId", "content"],
+        properties: {
+          conversationId: { type: "string" },
+          content: { type: "string" },
+        },
+      },
+      MarkReadRequest: {
+        type: "object",
+        required: ["conversationId"],
+        properties: { conversationId: { type: "string" } },
+      },
     },
   },
   security: [{ bearerAuth: [] }],
