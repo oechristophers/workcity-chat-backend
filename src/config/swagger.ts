@@ -1,0 +1,68 @@
+import swaggerJsdoc from "swagger-jsdoc";
+import type { OpenAPIV3 } from "openapi-types";
+
+const definition: OpenAPIV3.Document = {
+  openapi: "3.0.3",
+  info: {
+    title: "Workcity Chat API",
+    version: "1.0.0",
+    description: "Authentication service with JWT access & refresh tokens",
+  },
+  servers: [
+    {
+      url: "http://localhost:" + (process.env.PORT || 5000),
+      description: "Local dev",
+    },
+  ],
+  paths: {},
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT",
+      },
+    },
+    schemas: {
+      RegisterRequest: {
+        type: "object",
+        required: ["email", "password"],
+        properties: {
+          name: { type: "string" },
+          email: { type: "string", format: "email" },
+          password: { type: "string", format: "password" },
+          role: {
+            type: "string",
+            enum: ["admin", "agent", "customer", "designer", "merchant"],
+          },
+        },
+      },
+      LoginRequest: {
+        type: "object",
+        required: ["email", "password"],
+        properties: {
+          email: { type: "string", format: "email" },
+          password: { type: "string", format: "password" },
+        },
+      },
+      RefreshRequest: {
+        type: "object",
+        required: ["refreshToken"],
+        properties: { refreshToken: { type: "string" } },
+      },
+      LogoutRequest: {
+        type: "object",
+        required: ["refreshToken"],
+        properties: { refreshToken: { type: "string" } },
+      },
+    },
+  },
+  security: [{ bearerAuth: [] }],
+};
+
+const options = {
+  definition,
+  apis: ["src/routes/*.ts", "src/controllers/*.ts"],
+};
+
+export const swaggerSpec = swaggerJsdoc(options);
