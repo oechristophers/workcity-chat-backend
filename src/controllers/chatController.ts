@@ -17,7 +17,10 @@ export const listConversations = asyncHandler(
     const userId = getUserId(req);
     // Pagination params
     const page = Math.max(parseInt((req.query.page as string) || "1", 10), 1);
-    const limit = Math.min(100, Math.max(parseInt((req.query.limit as string) || "20", 10), 1));
+    const limit = Math.min(
+      100,
+      Math.max(parseInt((req.query.limit as string) || "20", 10), 1)
+    );
     const skip = (page - 1) * limit;
 
     // Count total conversations for this user
@@ -36,7 +39,13 @@ export const listConversations = asyncHandler(
                   $and: [
                     { $eq: ["$conversation", "$$convId"] },
                     { $ne: ["$sender", new mongoose.Types.ObjectId(userId)] },
-                    { $not: [{ $in: [new mongoose.Types.ObjectId(userId), "$readBy"] }] },
+                    {
+                      $not: [
+                        {
+                          $in: [new mongoose.Types.ObjectId(userId), "$readBy"],
+                        },
+                      ],
+                    },
                   ],
                 },
               },
