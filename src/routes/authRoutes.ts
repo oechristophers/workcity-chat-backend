@@ -4,7 +4,10 @@ import {
   login,
   refresh,
   logout,
+  me,
 } from "../controllers/authController.js";
+import { updateProfile } from "../controllers/userController.js";
+import { authMiddleware } from "../middlewares/authMiddleware.js";
 
 /**
  * @swagger
@@ -76,5 +79,7 @@ router.post("/register", register);
 router.post("/login", login);
 router.post("/refresh", refresh);
 router.post("/logout", logout);
+router.put("/profile", authMiddleware, updateProfile);
+router.get("/me", authMiddleware, me);
 
 export default router;

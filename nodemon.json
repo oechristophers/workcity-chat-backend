@@ -2,5 +2,5 @@
   "watch": ["src"],
   "ext": "ts,js,json",
   "ignore": ["dist"],
-  "exec": "node --loader ts-node/esm --env-file=.env ./src/server.ts"
+  "exec": "node --loader ts-node/esm -r tsconfig-paths/register --env-file=.env ./src/server.ts"
 }

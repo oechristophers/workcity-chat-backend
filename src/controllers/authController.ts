@@ -17,9 +17,23 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
   const existing = await User.findOne({ email });
   if (existing) throw new ApiError(409, "Email already in use");
   const user = await User.create({ name, email, password, role });
+  // Immediately issue tokens so client can be authenticated just like login
+  const accessToken = generateAccessToken(user.id, user.role);
+  const refreshToken = generateRefreshToken(user.id, user.role);
+  await user.addRefreshToken(refreshToken);
+  const safeUser = {
+    _id: user._id,
+    id: user._id,
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    profilePicture: user.profilePicture,
+    createdAt: user.createdAt,
+  };
   res
     .status(201)
-    .json({ success: true, data: { id: user._id, email: user.email } });
+    .json({ success: true, accessToken, refreshToken, user: safeUser });
 });
 
 // POST /auth/login
@@ -34,7 +48,17 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   const accessToken = generateAccessToken(user.id, user.role);
   const refreshToken = generateRefreshToken(user.id, user.role);
   await user.addRefreshToken(refreshToken);
-  res.json({ success: true, accessToken, refreshToken, user: user });
+  const safeUser = {
+    _id: user._id,
+    id: user._id, // convenience
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    profilePicture: user.profilePicture,
+    createdAt: user.createdAt,
+  };
+  res.json({ success: true, accessToken, refreshToken, user: safeUser });
 });
 
 // POST /auth/refresh
@@ -64,4 +88,22 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
     // ignore invalid token to prevent token fishing
   }
   res.json({ success: true, message: "Logged out" });
+});
+
+// GET /auth/me
+export const me = asyncHandler(async (req: any, res: Response) => {
+  if (!req.user) throw new ApiError(401, "Unauthorized");
+  const user = await User.findById(req.user.sub).lean();
+  if (!user) throw new ApiError(404, "User not found");
+  const safe = {
+    _id: user._id,
+    id: user._id,
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    profilePicture: user.profilePicture,
+    createdAt: user.createdAt,
+  };
+  res.json({ success: true, data: safe });
 });

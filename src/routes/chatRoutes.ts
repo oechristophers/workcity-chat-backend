@@ -3,6 +3,7 @@ import { authMiddleware } from "../middlewares/authMiddleware.js";
 import {
   listConversations,
   getConversationMessages,
+  getConversation,
   createConversation,
   postMessage,
   markMessagesRead,
@@ -153,6 +154,7 @@ router.use(authMiddleware);
  */
 router.get("/conversations", listConversations);
 router.get("/conversations/unread/total", totalUnread);
+router.get("/conversations/:id", getConversation);
 router.get("/conversations/:id/messages", getConversationMessages);
 router.post("/conversations", createConversation);
 router.post("/messages", postMessage);

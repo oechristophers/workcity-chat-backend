@@ -2,9 +2,11 @@ import asyncHandler from "express-async-handler";
 import { Request, Response } from "express";
 import { Conversation } from "../models/Conversation.js";
 import { Message } from "../models/Message.js";
+import { User } from "../models/User.js";
 import { ApiError } from "../utils/errorHandler.js";
 import { RequestWithUser } from "../interfaces/RequestWithUser.js";
 import mongoose from "mongoose";
+import { ioInstance } from "../socket/index.js";
 
 // Helper to assert user id
 const getUserId = (req: RequestWithUser) => {
@@ -75,6 +77,36 @@ export const listConversations = asyncHandler(
       { $limit: limit },
     ]);
 
+    // Populate participant minimal fields and lastMessage sender info
+    const userIds = Array.from(
+      new Set(
+        convs.flatMap((c: any) => [
+          ...c.participants.map((p: any) => p.toString()),
+          c.lastMessage?.sender?.toString?.(),
+        ])
+      )
+    ).filter(Boolean);
+    const users = await User.find({ _id: { $in: userIds } })
+      .select("name username profilePicture role")
+      .lean();
+    const userMap = Object.fromEntries(
+      users.map((u: any) => [u._id.toString(), u])
+    );
+
+    const enriched = convs.map((c: any) => ({
+      ...c,
+      participants: c.participants.map(
+        (pid: any) => userMap[pid.toString()] || pid
+      ),
+      lastMessage: c.lastMessage
+        ? {
+            ...c.lastMessage,
+            sender:
+              userMap[c.lastMessage.sender?.toString()] || c.lastMessage.sender,
+          }
+        : null,
+    }));
+
     res.json({
       success: true,
       pagination: {
@@ -83,8 +115,51 @@ export const listConversations = asyncHandler(
         total,
         pages: Math.ceil(total / limit) || 1,
       },
-      data: convs,
+      data: enriched,
     });
+  }
+);
+
+export const getConversation = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const conv = await Conversation.findById(id).lean();
+    if (!conv) throw new ApiError(404, "Conversation not found");
+    if (!conv.participants.map((p: any) => p.toString()).includes(userId))
+      throw new ApiError(403, "Forbidden");
+
+    // Compute unread count for this conversation
+    const unreadCount = await Message.countDocuments({
+      conversation: id,
+      sender: { $ne: userId },
+      readBy: { $ne: userId },
+    });
+
+    // Populate lastMessage
+    let lastMessageDoc: any = null;
+    if (conv.lastMessage) {
+      lastMessageDoc = await Message.findById(conv.lastMessage).lean();
+    }
+
+    const participantIds = conv.participants.map((p: any) => p.toString());
+    const users = await User.find({ _id: { $in: participantIds } })
+      .select("name username profilePicture role")
+      .lean();
+    const userMap: Record<string, any> = Object.fromEntries(
+      users.map((u: any) => [u._id.toString(), u])
+    );
+
+    const enriched = {
+      ...conv,
+      participants: conv.participants.map(
+        (pid: any) => userMap[pid.toString()] || pid
+      ),
+      unreadCount,
+      lastMessage: lastMessageDoc,
+    };
+
+    res.json({ success: true, data: enriched });
   }
 );
 
@@ -168,26 +243,76 @@ export const createConversation = asyncHandler(
 export const postMessage = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const userId = getUserId(req);
-    const { conversationId, content } = req.body as {
-      conversationId: string;
-      content: string;
-    };
-    if (!conversationId || !content)
-      throw new ApiError(400, "conversationId & content required");
+    const { conversationId, content, attachments } = req.body as any;
+
+    if (!conversationId) {
+      throw new ApiError(400, "conversationId required");
+    }
+
+    // New validation check: Validate the attachments array and its contents
+    const hasAttachments =
+      attachments && Array.isArray(attachments) && attachments.length > 0;
+
+    // Validate if either content or valid attachments exist (allow empty content when attachments supplied)
+    if ((!content || !content.trim()) && !hasAttachments) {
+      throw new ApiError(400, "content or attachments required");
+    }
+
+    // If attachments exist, validate each one
+    if (hasAttachments) {
+      const invalidAttachment = attachments.find((att: any) => !att.type);
+      if (invalidAttachment) {
+        throw new ApiError(400, "attachments must have a 'type'");
+      }
+    }
+
     const conv = await Conversation.findById(conversationId);
-    if (!conv) throw new ApiError(404, "Conversation not found");
-    if (!conv.participants.map((p) => p.toString()).includes(userId))
+    if (!conv) {
+      throw new ApiError(404, "Conversation not found");
+    }
+
+    if (!conv.participants.map((p) => p.toString()).includes(userId)) {
       throw new ApiError(403, "Forbidden");
+    }
+
+    // Create the message document
     const message = await Message.create({
       conversation: conversationId,
       sender: userId,
-      content,
+      content: content?.trim() || undefined,
       status: "sent",
       readBy: [userId],
+      attachments: hasAttachments ? attachments : [],
     });
+
     conv.lastMessage = message._id;
     await conv.save();
-    res.status(201).json({ success: true, data: message });
+
+    const populatedSender = await User.findById(userId)
+      .select("name username profilePicture role")
+      .lean();
+
+    res.status(201).json({
+      success: true,
+      data: { ...message.toObject(), sender: populatedSender },
+    });
+
+    // Emit real-time event if socket server initialized
+    if (ioInstance) {
+      ioInstance.to(conversationId).emit("message:new", {
+        message: { ...message.toObject(), sender: userId },
+      });
+      // Also push a lightweight notification to each participant's personal room so they can refresh list if conversation not joined yet
+      conv.participants.forEach((p: any) => {
+        ioInstance?.to(`u:${p.toString()}`).emit("conversation:maybe_new", {
+          conversationId,
+          lastMessage: {
+            content: message.content,
+            createdAt: message.createdAt,
+          },
+        });
+      });
+    }
   }
 );
 
